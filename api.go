@@ -27,7 +27,7 @@ func (s *APIServer) Run() {
 
 	router.HandleFunc("/account", makeHTTPHandleFunc(s.handleAccount))
 
-	router.HandleFunc("/account/{id}", makeHTTPHandleFunc(s.handleGetAccount))
+	router.HandleFunc("/account/{id}", makeHTTPHandleFunc(s.handleGetAccountById))
 
 	log.Println("JSON API server runnning on  port: ", s.listenAddr)
 
@@ -49,9 +49,23 @@ func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error 
 }
 
 func (s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) error {
-	id := mux.Vars(r)["id"]
+	accounts, err := s.store.GetAccounts()
+	if err != nil {
+		return err
+	}
 
-	account, err := s.store.GetAccountById(convertToInt(id))
+	return WriteJSON(w, http.StatusOK, accounts)
+}
+
+func (s *APIServer) handleGetAccountById(w http.ResponseWriter, r *http.Request) error {
+	idStr := mux.Vars(r)["id"]
+
+	id, err := convertToInt(idStr)
+	if err != nil {
+		return err
+	}
+
+	account, err := s.store.GetAccountById(id)
 	if err != nil {
 		return err
 	}
@@ -74,9 +88,14 @@ func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) error {
-	id := mux.Vars(r)["id"]
+	idStr := mux.Vars(r)["id"]
 
-	if err := s.store.DeleteAccount(convertToInt(id)); err != nil {
+	id, err := convertToInt(idStr)
+	if err != nil {
+		return err
+	}
+
+	if err := s.store.DeleteAccount((id)); err != nil {
 		return err
 	}
 
@@ -97,7 +116,7 @@ func WriteJSON(w http.ResponseWriter, status int, v any) error {
 type apiFunc func(http.ResponseWriter, *http.Request) error
 
 type ApiError struct {
-	Error string
+	Error string `json:"error"`
 }
 
 func makeHTTPHandleFunc(f apiFunc) http.HandlerFunc {
@@ -108,10 +127,10 @@ func makeHTTPHandleFunc(f apiFunc) http.HandlerFunc {
 	}
 }
 
-func convertToInt(str string) int {
-	i, err := strconv.Atoi(str)
+func convertToInt(str string) (int, error) {
+	id, err := strconv.Atoi(str)
 	if err != nil {
-		fmt.Println("Error converting id to int")
+		return 0, fmt.Errorf("Error converting id to int")
 	}
-	return i
+	return id, nil
 }
