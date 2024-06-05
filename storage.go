@@ -72,14 +72,14 @@ func (s *PostgresStore) CreateAccount(acc *Account) error {
 func (s *PostgresStore) DeleteAccount(id int) error {
 	query := `delete from account where id = $1`
 
-	_, err := s.db.Exec(query, id)
+	_, err := s.db.Query(query, id)
 	return err
 }
 
 func (s *PostgresStore) UpdatAccount(acc *Account) error {
 	query := `update account set first_name = $1, last_name = $2, number = $3, balance = $4, where id = $5`
 
-	_, err := s.db.Exec(query, &acc.FirstName, &acc.LastName, &acc.Number, &acc.Balance, &acc.ID)
+	_, err := s.db.Query(query, &acc.FirstName, &acc.LastName, &acc.Number, &acc.Balance, &acc.ID)
 	return err
 }
 
