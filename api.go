@@ -28,7 +28,7 @@ func (s *APIServer) Run() {
 	router := mux.NewRouter()
 
 	router.HandleFunc("/account", makeHTTPHandleFunc(s.handleAccount))
-	router.HandleFunc("/account/{id}", withJWTAuth(makeHTTPHandleFunc(s.handleGetAccountById)))
+	router.HandleFunc("/account/{id}", withJWTAuth(makeHTTPHandleFunc(s.handleGetAccountById), s.store))
 	router.HandleFunc("/transfer", makeHTTPHandleFunc(s.handleTransfer))
 
 	log.Println("JSON API server runnning on  port: ", s.listenAddr)
@@ -88,6 +88,12 @@ func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 		return err
 	}
 
+	tokenString, err := createJWT(account)
+	if err != nil {
+		return err
+	}
+	fmt.Println(tokenString)
+
 	return WriteJSON(w, http.StatusCreated, account)
 }
 
@@ -120,16 +126,54 @@ func WriteJSON(w http.ResponseWriter, status int, v any) error {
 	return json.NewEncoder(w).Encode(v)
 }
 
-func withJWTAuth(handlerFunc http.HandlerFunc) http.HandlerFunc {
+func createJWT(acc *Account) (string, error) {
+
+	claims := &jwt.MapClaims{
+		"ExpiresAt":     180000,
+		"ID":            acc.ID,
+		"accountNumber": acc.Number,
+	}
+
+	secret := os.Getenv(`JWT_SECRET`)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	return token.SignedString([]byte(secret))
+}
+
+func withJWTAuth(handlerFunc http.HandlerFunc, db Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("calling jwt middlewre")
-		tokenString := r.Header.Get("x-jwt-token")
 
-		_, err := validateJWT(tokenString)
+		tokenString := r.Header.Get("x-jwt-token")
+		token, err := validateJWT(tokenString)
 		if err != nil {
 			WriteJSON(w, http.StatusForbidden, ApiError{Error: "invalid token"})
 			return
 		}
+
+		if !token.Valid {
+			WriteJSON(w, http.StatusForbidden, ApiError{Error: "invalid token"})
+			return
+		}
+
+		userID, err := getID(r)
+		if err != nil {
+			WriteJSON(w, http.StatusForbidden, err)
+			return
+		}
+
+		account, err := db.GetAccountById(userID)
+		if err != nil {
+			WriteJSON(w, http.StatusForbidden, err)
+			return
+		}
+		claims := token.Claims.(jwt.MapClaims)
+
+		if account.Number != int64(claims["accountNumber"].(float32)) {
+			WriteJSON(w, http.StatusForbidden, ApiError{Error: "you don't have acsse to this user"})
+			return
+		}
+
 		handlerFunc(w, r)
 	}
 }
